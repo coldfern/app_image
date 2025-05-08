@@ -26,13 +26,52 @@ def load_summarizer():
 
 summarizer = load_summarizer()
 
-# [Rest of your functions remain the same, except remove generate_wordcloud()]
+def image_to_text(image):
+    return pytesseract.image_to_string(image)
+
+def pdf_to_text(uploaded_file):
+    images = convert_from_bytes(uploaded_file.read())
+    text = ""
+    for i, image in enumerate(images):
+        text += f"--- Page {i+1} ---\n"
+        text += image_to_text(image) + "\n\n"
+    return text
+
+def generate_summary(text, max_length=150):
+    if len(text.split()) < 50:
+        return "Text is too short for meaningful summarization."
+    
+    summary = summarizer(text, max_length=max_length, min_length=30, do_sample=False)
+    return summary[0]['summary_text']
+
+def lsa_summary(text, sentences_count=3):
+    parser = PlaintextParser.from_string(text, Tokenizer("english"))
+    summarizer = LsaSummarizer()
+    summary = summarizer(parser.document, sentences_count)
+    return " ".join([str(sentence) for sentence in summary])
+
+def extract_insights(text):
+    sentences = nltk.sent_tokenize(text)
+    long_sentences = [s for s in sentences if len(s.split()) > 15]
+    questions = [s for s in sentences if s.strip().endswith('?')]
+    
+    word_freq = pd.Series(nltk.word_tokenize(text)).value_counts()
+    top_words = word_freq.head(10).to_dict()
+    
+    insights = {
+        "num_sentences": len(sentences),
+        "num_words": len(nltk.word_tokenize(text)),
+        "avg_sentence_length": sum(len(s.split()) for s in sentences) / len(sentences) if sentences else 0,
+        "long_sentences": long_sentences[:3],
+        "questions": questions,
+        "top_words": top_words
+    }
+    return insights
 
 def main():
     st.title("📄 Document Insight Generator")
     st.markdown("Upload images or PDFs to extract text and generate summaries with insights")
     
-    # File upload section
     uploaded_file = st.file_uploader(
         "Upload an image or PDF file",
         type=["png", "jpg", "jpeg", "pdf"],
@@ -63,7 +102,6 @@ def main():
             if st.button("Process Document"):
                 with st.spinner("Extracting text and generating insights..."):
                     try:
-                        # Extract text from file
                         if uploaded_file.type.startswith('image'):
                             image = Image.open(uploaded_file)
                             extracted_text = image_to_text(image)
